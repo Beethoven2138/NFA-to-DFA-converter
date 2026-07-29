@@ -1,3 +1,5 @@
+#pragma once
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -10,41 +12,41 @@
 #include <algorithm>
 #include <unordered_set>
 
+namespace automaton{
 
 template <typename Domain, typename Codomain>
 class Func
 {
 private:
-    std::vector<std::pair<Domain, Codomain>> mapping;
-public:
     Domain name;
+    std::unordered_map<Domain, Codomain> mapping;
+public:
     Func() = default;
     Func(const Domain& name){
         this->name = name;
     }
-    Func(const Domain &name, const std::vector<std::pair<Domain, Codomain>> &mapping){
+    Func(const Domain &name, const std::unordered_map<Domain, Codomain> &mapping){
         this->mapping = mapping;
         this->name = name;
     }
-    Func(const Domain &name, std::vector<std::pair<Domain, Codomain>> &&mapping){
+    Func(const Domain &name, std::unordered_map<Domain, Codomain> &&mapping){
         this->mapping = std::move(mapping);
         this->name = name;
     }
     ~Func() = default;
     void add_element_to_domain(const Domain& dom, const Codomain& codom){
-        mapping.push_back(std::pair(dom, codom));
+        mapping[dom] = codom;
     }
     void add_element_to_domain(const Domain& dom, Codomain&& codom){
-        mapping.push_back(std::pair(dom, std::move(codom)));
+        mapping[dom] = std::move(codom);
     }
-    std::optional<Codomain> map_element(const Domain& dom) const {
-        for (const auto& i : mapping){
-            if (i.first == dom)
-                return i.second;
-        }
+    [[nodiscard]] std::optional<Codomain> map_element(const Domain& dom) const {
+        auto it = mapping.find(dom);
+        if (it != mapping.end())
+            return it->second;
         return std::nullopt;
     }
-    std::optional<Codomain> operator () (const Domain& dom) const {
+    [[nodiscard]] std::optional<Codomain> operator () (const Domain& dom) const {
         return map_element(dom);
     }
 };
@@ -93,8 +95,8 @@ public:
     }
     void add_transition(const std::tuple<const std::string, const std::string, const std::string> &transition_add){
        transition_func.at(std::get<0>(transition_add)).add_element_to_domain(std::get<1>(transition_add), std::get<2>(transition_add));
-    };
-    std::optional<std::string> Transition(const std::pair<const std::string, const std::string> &input){
+    }
+    std::optional<std::string> Transition(const std::pair<const std::string, const std::string> &input) const{
         if (transition_func.count(input.first))
             return transition_func.at(input.first).map_element(input.second);
         return std::nullopt;
@@ -182,14 +184,14 @@ public:
         }
         read_final_states(line);
     }
-    std::string simulate(const std::vector<std::string> &word){
+    [[nodiscard]] std::string simulate(const std::vector<std::string> &word) const{
         std::string ret = initial_state;
         for (const auto &i : word){
             ret = *transition_func.at(ret)(i);
         }
         return ret;
     }
-    bool is_valid_word(const std::vector<std::string> &word){
+    [[nodiscard]] bool is_valid_word(const std::vector<std::string> &word) const{
         std::string intermediate = initial_state;
         for (const auto &i : word){
             auto tmp = transition_func.at(intermediate)(i);
@@ -208,9 +210,21 @@ public:
     ~DFA() = default;
 };
 
+
+
 class NFA
 {
 private:
+    struct UnorderedSetHash
+    {
+        std::size_t operator () (const std::unordered_set<std::string>& key) const {
+            std::size_t ret = 0;
+            for (const auto& str : key){
+                ret ^= std::hash<std::string>{}(str) + 0x9e3779b9 + (ret << 6) + (ret >> 2);
+            }
+            return ret;
+        }
+    };
     using DFA_NODE = std::unordered_set<std::string>;
     std::vector<std::string> alphabet;
     std::vector<std::string> nodes;
@@ -222,24 +236,28 @@ private:
     std::vector<DFA_NODE> equiv_dfa_nodes;
     DFA_NODE equiv_dfa_init_node;
     std::unordered_set<std::string> final_states_closure;//epsilon closures of the NFA final states
-    //Issue is that you can't have DFA_NODE for unordered_maps, so need to order the strings and combine them into a single string.
-    std::unordered_map<std::string, Func<std::string, DFA_NODE>> equiv_dfa_transition_func;
+    std::unordered_map<DFA_NODE, Func<std::string, DFA_NODE>, UnorderedSetHash> equiv_dfa_transition_func;
     void finally_fill_out_equiv_dfa(){
         equiv_dfa.alphabet = alphabet;
         equiv_dfa.nodes = {};
         for (const auto &node : equiv_dfa_nodes){
-            std::string tmp = generate_string_from_DFA_node(node);
-            equiv_dfa.nodes.push_back(tmp);
-            Func<std::string, std::string> func_for_node(tmp);
+            equiv_dfa.nodes.push_back(generate_string_from_DFA_node(node));
+            Func<std::string, std::string> func_for_node(generate_string_from_DFA_node(node));
             for (const auto &letter : alphabet){
-                func_for_node.add_element_to_domain(letter, generate_string_from_DFA_node(*equiv_dfa_transition_func.at(tmp)(letter)));
+                func_for_node.add_element_to_domain(letter, generate_string_from_DFA_node(*equiv_dfa_transition_func.at(node)(letter)));
             }
-            equiv_dfa.transition_func[tmp] = std::move(func_for_node);
+            equiv_dfa.transition_func[generate_string_from_DFA_node(node)] = std::move(func_for_node);
         }
         equiv_dfa.initial_state = generate_string_from_DFA_node(equiv_dfa_init_node);
         equiv_dfa.final_states = {};
-        for (const auto &i : final_states_closure)
-            equiv_dfa.final_states.push_back(i);
+        for (const auto &dfa_node : equiv_dfa_nodes){
+            for (const auto &nfa_state : dfa_node){
+                if (std::ranges::contains(final_states, nfa_state)){
+                    equiv_dfa.final_states.push_back(generate_string_from_DFA_node(dfa_node));
+                    break;
+                }
+            }
+        }
     }
     void compute_epsilon_closure(const std::string &node, std::unordered_set<std::string>& closure){
         if (closure.contains(node))
@@ -254,7 +272,7 @@ private:
         }
     }
     std::unordered_set<std::string> find_reachable_set(const std::unordered_set<std::string> &DFA_node, const std::string &input_symbol){
-        std::unordered_set<std::string> buffer = DFA_node;
+        std::unordered_set<std::string> buffer{};
         for (const auto &i : DFA_node){
             auto tmp = transition_func.at(i)(input_symbol);
             if (tmp){
@@ -271,21 +289,22 @@ private:
     }
     //node has to already be pushed onto equiv_dfa_nodes
     void dfa_add_transitions_for_node(const DFA_NODE &node){
-        std::string equiv_string = generate_string_from_DFA_node(node);
-        if (equiv_dfa_transition_func.contains(equiv_string))
+        if (equiv_dfa_transition_func.contains(node))
             return;
         Func<std::string, DFA_NODE> transition_function{};
         for (const auto &letter : alphabet){
             auto tmp = find_reachable_set(node, letter);
             transition_function.add_element_to_domain(letter, tmp);
-            if (!tmp.empty() && !std::ranges::contains(equiv_dfa_nodes, tmp)){
+            if (!std::ranges::contains(equiv_dfa_nodes, tmp)){
                 equiv_dfa_nodes.push_back(tmp);
                 dfa_add_transitions_for_node(tmp);
             }
         }
-        equiv_dfa_transition_func[equiv_string] = std::move(transition_function);
+        equiv_dfa_transition_func[node] = std::move(transition_function);
     }
-    std::string generate_string_from_DFA_node(const DFA_NODE &node){
+    std::string generate_string_from_DFA_node(const DFA_NODE &node) const {
+        if (node.empty())
+            return "{}";
         std::vector<std::string_view> node_components{};
         for (const auto &i : node)
             node_components.push_back(i);
@@ -303,9 +322,13 @@ public:
     NFA(std::ifstream &input_file){
         read_NFA(input_file);
     }
-    
-    void dfa_generate_transitions(){
-        DFA_NODE *node = &equiv_dfa_init_node;
+    void print_out_NFA() const {
+        std::cout << "These are the nodes:" << std::endl;
+        for (const auto &i : equiv_dfa_nodes)
+            std::cout << generate_string_from_DFA_node(i) << std::endl;
+        std::cout << "These are the letters:" << std::endl;
+        for (const auto &i : alphabet)
+            std::cout << i << std::endl;
     }
     std::unordered_set<std::string> get_epsilon_closure(const std::string &node){
         std::unordered_set<std::string> closure{};
@@ -453,26 +476,29 @@ public:
         dfa_add_transitions_for_node(equiv_dfa_init_node);
         finally_fill_out_equiv_dfa();
     }
-    std::string simulate(const std::vector<std::string> &word){
+    [[nodiscard]] std::string simulate(const std::vector<std::string> &word) const {
         DFA_NODE ret = equiv_dfa_init_node;
         for (const auto &i : word){
-            ret = *equiv_dfa_transition_func.at(generate_string_from_DFA_node(ret))(i);
+            ret = *equiv_dfa_transition_func.at(ret)(i);
         }
         return generate_string_from_DFA_node(ret);
     }
-    bool is_valid_word(const std::vector<std::string> &word){
+    [[nodiscard]] bool is_valid_word(const std::vector<std::string> &word) const {
         DFA_NODE intermediate = equiv_dfa_init_node;
         for (const auto &i : word){
-            auto tmp = equiv_dfa_transition_func.at(generate_string_from_DFA_node(intermediate))(i);
+            auto tmp = equiv_dfa_transition_func.at(intermediate)(i);
             if (tmp.has_value())
                 intermediate = *tmp;
             else{
                 return false;
             }
         }
-        if (intermediate == final_states_closure)
-            return true;
+        for (const auto& state: intermediate){
+            if (std::ranges::contains(final_states, state))
+                return true;
+        }
         return false;
     }
     ~NFA() = default;
 };
+}
