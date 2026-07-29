@@ -11,6 +11,7 @@
 #include <sstream>
 #include <algorithm>
 #include <unordered_set>
+#include <ranges>
 
 namespace automaton{
 
@@ -22,17 +23,9 @@ private:
     std::unordered_map<Domain, Codomain> mapping;
 public:
     Func() = default;
-    Func(const Domain& name){
-        this->name = name;
-    }
-    Func(const Domain &name, const std::unordered_map<Domain, Codomain> &mapping){
-        this->mapping = mapping;
-        this->name = name;
-    }
-    Func(const Domain &name, std::unordered_map<Domain, Codomain> &&mapping){
-        this->mapping = std::move(mapping);
-        this->name = name;
-    }
+    Func(const Domain& name) : name(name) {}
+    Func(const Domain &name, const std::unordered_map<Domain, Codomain> &mapping) : mapping(mapping), name(name) {}
+    Func(const Domain &name, std::unordered_map<Domain, Codomain> &&mapping) : mapping(std::move(mapping)), name(name) {}
     ~Func() = default;
     void add_element_to_domain(const Domain& dom, const Codomain& codom){
         mapping[dom] = codom;
@@ -54,7 +47,6 @@ public:
 class DFA
 {
 private:
-    using string_ptr = std::shared_ptr<const std::string>;
     std::vector<std::string> alphabet;
     std::vector<std::string> nodes;
     std::string initial_state;
@@ -146,30 +138,30 @@ public:
         std::string line;
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("NODES:")){
-            std::cout << "oh well..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing NODES");
         }
         read_nodes(line);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("SYMBOLS:")){
-            std::cout << "oh well for symbols..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing SYMBOLS");
         }
         read_symbols(line);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("TRANSITIONS:")){
-            std::cout << "oh well for transitions..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing TRANSITIONS");
         }
         read_transitions(line);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("INITIAL:")){
-            std::cout << "oh well for initial..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing INITIAL");
         }
         std::stringstream ss(line);
         std::string token;
@@ -178,16 +170,19 @@ public:
         make_initial(token);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("FINALS:")){
-            std::cout << "oh well for finals..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing FINALS");
         }
         read_final_states(line);
     }
     [[nodiscard]] std::string simulate(const std::vector<std::string> &word) const{
         std::string ret = initial_state;
         for (const auto &i : word){
-            ret = *transition_func.at(ret)(i);
+            auto tmp = transition_func.at(ret)(i);
+            if (!tmp.has_value())
+                throw std::invalid_argument("Simulation failed due to an invalid input file");
+            ret = *tmp;
         }
         return ret;
     }
@@ -220,7 +215,7 @@ private:
         std::size_t operator () (const std::unordered_set<std::string>& key) const {
             std::size_t ret = 0;
             for (const auto& str : key){
-                ret ^= std::hash<std::string>{}(str) + 0x9e3779b9 + (ret << 6) + (ret >> 2);
+                ret += std::hash<std::string>{}(str);
             }
             return ret;
         }
@@ -431,30 +426,30 @@ public:
         std::string line;
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("NODES:")){
-            std::cout << "oh well..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing NODES");
         }
         read_nodes(line);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("SYMBOLS:")){
-            std::cout << "oh well for symbols..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing SYMBOLS");
         }
         read_symbols(line);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("TRANSITIONS:")){
-            std::cout << "oh well for transitions..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing TRANSITIONS");
         }
         read_transitions(line);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("INITIAL:")){
-            std::cout << "oh well for initial..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing INITIAL");
         }
         std::stringstream ss(line);
         std::string token;
@@ -463,9 +458,9 @@ public:
         make_initial(token);
         if (!std::getline(input_file, line))
             return;
+        std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("FINALS:")){
-            std::cout << "oh well for finals..." << std::endl;
-            return;
+            throw std::runtime_error("Invalid input file: Missing FINALS");
         }
         read_final_states(line);
     }
@@ -479,7 +474,10 @@ public:
     [[nodiscard]] std::string simulate(const std::vector<std::string> &word) const {
         DFA_NODE ret = equiv_dfa_init_node;
         for (const auto &i : word){
-            ret = *equiv_dfa_transition_func.at(ret)(i);
+            auto tmp = equiv_dfa_transition_func.at(ret)(i);
+            if (!tmp.has_value())
+                throw std::invalid_argument("Simulation failed: invalid input file");
+            ret = *tmp;
         }
         return generate_string_from_DFA_node(ret);
     }
