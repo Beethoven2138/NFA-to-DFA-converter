@@ -16,8 +16,7 @@
 namespace automaton{
 
 template <typename Domain, typename Codomain>
-class Func
-{
+class Func{
 private:
     Domain name;
     std::unordered_map<Domain, Codomain> mapping;
@@ -44,8 +43,7 @@ public:
     }
 };
 
-class DFA
-{
+class DFA{
 private:
     std::vector<std::string> alphabet;
     std::vector<std::string> nodes;
@@ -137,28 +135,28 @@ public:
             return;
         std::string line;
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("NODES:")){
             throw std::runtime_error("Invalid input file: Missing NODES");
         }
         read_nodes(line);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("SYMBOLS:")){
             throw std::runtime_error("Invalid input file: Missing SYMBOLS");
         }
         read_symbols(line);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("TRANSITIONS:")){
             throw std::runtime_error("Invalid input file: Missing TRANSITIONS");
         }
         read_transitions(line);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("INITIAL:")){
             throw std::runtime_error("Invalid input file: Missing INITIAL");
@@ -169,7 +167,7 @@ public:
         std::getline(ss, token, ';');
         make_initial(token);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("FINALS:")){
             throw std::runtime_error("Invalid input file: Missing FINALS");
@@ -277,7 +275,8 @@ private:
         }
         std::unordered_set<std::string> ret{};
         for (const auto &i : buffer){
-            auto tmp = get_epsilon_closure(i);
+            //auto tmp = (epsilon_closures.contains(i)) ? epsilon_closures.at(i) : get_epsilon_closure(i);
+            auto& tmp = epsilon_closures.at(i);
             ret.insert(tmp.begin(), tmp.end());
         }
         return ret;
@@ -311,6 +310,13 @@ private:
         }
         ret.back() = '}';
         return ret;
+    }
+    void convert_to_DFA(){
+        fill_epsilon_closures();
+        std::string dfa_init_string = generate_string_from_DFA_node(equiv_dfa_init_node);
+        equiv_dfa_nodes = {equiv_dfa_init_node};
+        dfa_add_transitions_for_node(equiv_dfa_init_node);
+        finally_fill_out_equiv_dfa();
     }
 public:
     NFA() = default;
@@ -425,28 +431,28 @@ public:
             return;
         std::string line;
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("NODES:")){
             throw std::runtime_error("Invalid input file: Missing NODES");
         }
         read_nodes(line);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("SYMBOLS:")){
             throw std::runtime_error("Invalid input file: Missing SYMBOLS");
         }
         read_symbols(line);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("TRANSITIONS:")){
             throw std::runtime_error("Invalid input file: Missing TRANSITIONS");
         }
         read_transitions(line);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("INITIAL:")){
             throw std::runtime_error("Invalid input file: Missing INITIAL");
@@ -457,19 +463,13 @@ public:
         std::getline(ss, token, ';');
         make_initial(token);
         if (!std::getline(input_file, line))
-            return;
+            throw std::runtime_error("Unexpected EOF");
         std::erase_if(line, [](unsigned char c){return std::isspace(c);});
         if (!line.starts_with("FINALS:")){
             throw std::runtime_error("Invalid input file: Missing FINALS");
         }
         read_final_states(line);
-    }
-    void convert_to_DFA(){
-        fill_epsilon_closures();
-        std::string dfa_init_string = generate_string_from_DFA_node(equiv_dfa_init_node);
-        equiv_dfa_nodes = {equiv_dfa_init_node};
-        dfa_add_transitions_for_node(equiv_dfa_init_node);
-        finally_fill_out_equiv_dfa();
+        convert_to_DFA();
     }
     [[nodiscard]] std::string simulate(const std::vector<std::string> &word) const {
         DFA_NODE ret = equiv_dfa_init_node;
